@@ -49,49 +49,56 @@ if [ "$num_paragraphs" -eq 0 ]; then
   exit 1
 fi
 
-# Number of images to generate
-NUM_IMGS=5
+# Define maximum characters per image (adjust as needed)
+MAX_CHARS_PER_IMAGE=700
 
-# Distribute the paragraphs evenly among the 5 images:
-# For each image i (0 to NUM_IMGS-1):
-#   start_index = floor(i * num_paragraphs / NUM_IMGS)
-#   end_index   = floor((i+1) * num_paragraphs / NUM_IMGS) - 1
+# Divide the text into groups based on size, without breaking in the middle of a paragraph
+groups=()
+group_text=""
+group_count=0
+
+for p in "${paragraphs[@]}"; do
+  # If adding the current paragraph exceeds the limit and there is already accumulated content, finalize the group
+  if [ $group_count -gt 0 ] && [ $((group_count + ${#p})) -gt $MAX_CHARS_PER_IMAGE ]; then
+    groups+=("$group_text")
+    group_text=""
+    group_count=0
+  fi
+  # Append the paragraph to the group (with two newlines)
+  group_text+="$p"$'\n\n'
+  group_count=$((group_count + ${#p}))
+done
+
+# Add the last group, if any
+if [ -n "$group_text" ]; then
+  groups+=("$group_text")
+fi
+
+NUM_IMGS=${#groups[@]}
+
+# Create the output directory with the current date (format dd-mm-yyyy)
+current_date=$(date +"%d-%m-%Y")
+output_dir="output/$current_date"
+mkdir -p "$output_dir"
 
 echo "Total paragraphs found: $num_paragraphs"
 echo "Generating $NUM_IMGS images..."
 
 for ((i = 0; i < NUM_IMGS; i++)); do
-  # Calculate the start and end indices for the paragraphs in this group
-  start_index=$((i * num_paragraphs / NUM_IMGS))
-  end_index=$((((i + 1) * num_paragraphs) / NUM_IMGS - 1))
-
-  group_text=""
-  # Concatenate the paragraphs in this group, separating them with two newlines
-  for ((j = start_index; j <= end_index; j++)); do
-    # Ensure the index does not exceed the number of paragraphs
-    if [ $j -ge "$num_paragraphs" ]; then
-      break
-    fi
-    group_text+="${paragraphs[j]}"
-    # If this is not the last paragraph in the group, add two newlines
-    if [ $j -lt $end_index ]; then
-      group_text+=$'\n\n'
-    fi
-  done
-
-  # Define the output file name (e.g.: image_01.png, image_02.png, ...)
-  output=$(printf "image_%02d.png" $((i + 1)))
+  # Define the output file name (e.g.: 01-output.png, 02-output.png, ...)
+  output=$(printf "%02d-output.png" $((i + 1)))
+  output_path="$output_dir/$output"
 
   # Create a temporary file to store the text
   tmpfile=$(mktemp)
   # Using -e ensures that \n is interpreted as a newline
-  echo -e "$group_text" >"$tmpfile"
+  echo -e "${groups[i]}" >"$tmpfile"
 
   magick -size 1000x1270 \
     -background white \
     -fill black \
     -gravity NorthWest \
-    -font /home/skvggor/.local/share/fonts/NerdFonts/IosevkaNerdFont-Regular.ttf \
+    -font ~/.local/share/fonts/NerdFonts/IosevkaNerdFont-Regular.ttf \
     -pointsize 40 \
     -interline-spacing 20 \
     caption:@"$tmpfile" \
@@ -100,12 +107,12 @@ for ((i = 0; i < NUM_IMGS; i++)); do
     -extent 1080x1350 \
     -gravity southeast \
     -fill black \
-    -font /home/skvggor/.local/share/fonts/NerdFonts/IosevkaNerdFont-Regular.ttf \
+    -font ~/.local/share/fonts/NerdFonts/IosevkaNerdFont-Regular.ttf \
     -pointsize 30 \
     -annotate +40+40 "$((${i} + 1))/$NUM_IMGS" \
-    "$output"
+    "$output_path"
 
-  echo "Created image: $output"
+  echo "Created image: $output_path"
   rm "$tmpfile"
 done
 
